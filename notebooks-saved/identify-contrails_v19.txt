@@ -1,0 +1,1220 @@
+
+Identify Contrails with Keras
+
+# reinstall tensorflow-io
+# to avoid the UserWarning: unable to load libtensorflow_io_plugins.so
+
+#!pip install tensorflow-io
+
+import os
+
+# ==============================
+
+TRAIN = True
+
+if os.path.exists('/kaggle'):
+    PLATFORM = 'kaggle'
+else:
+    PLATFORM = 'gcp'
+
+# ==============================
+
+print(f'PLATFORM = {PLATFORM}')
+
+PLATFORM = kaggle
+
+if PLATFORM == 'kaggle':
+
+    WORK_DIR = '/kaggle/working'  # preserved if notebook is saved
+    TEMP_DIR = '/kaggle/temp'  # just during current session
+
+    DATA_DIR = '/kaggle/input/google-research-identify-contrails-reduce-global-warming'
+
+    # You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+    # You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+
+elif PLATFORM == 'gcp':
+
+    WORK_DIR = '/home/jupyter/kaggle/working'  # preserved if notebook is saved
+    TEMP_DIR = '/home/jupyter/kaggle/temp'  # just during current session
+
+    DATA_DIR = '/home/jupyter/kaggle/input/google-research-identify-contrails-reduce-global-warming'
+    
+    %cd $WORK_DIR
+
+print('PWD =', os.getcwd())
+
+PWD = /kaggle/working
+
+UPDATE_DATA = False
+
+if UPDATE_DATA:
+    %cp -v /kaggle/input/identify-contrails/contrails_2023*.h5 .
+
+if not TRAIN:
+    checkpoint_path = 'contrails_2023-07-15_15-10-49.h5'
+    print(f'checkpoint_path = {checkpoint_path}')
+
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import datetime
+import math
+import pathlib
+import random
+import shutil
+
+from pytz import timezone
+
+from tqdm.notebook import tqdm
+
+import matplotlib.pyplot as plt
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import scipy
+
+PRINT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %Z%z"
+FILE_TIME_FORMAT = "%Y-%m-%d_%H-%M-%S"
+
+now_time = datetime.datetime.now(timezone('CET'))
+
+file_time_str = now_time.strftime(FILE_TIME_FORMAT)
+
+print('Started', now_time.strftime(PRINT_TIME_FORMAT))
+
+Started 2023-07-20 20:57:19 CEST+0200
+
+import tensorflow as tf
+
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import backend as backend
+
+/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/__init__.py:98: UserWarning: unable to load libtensorflow_io_plugins.so: unable to open file: libtensorflow_io_plugins.so, from paths: ['/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/libtensorflow_io_plugins.so']
+caused by: ['/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/libtensorflow_io_plugins.so: undefined symbol: _ZN3tsl6StatusC1EN10tensorflow5error4CodeESt17basic_string_viewIcSt11char_traitsIcEENS_14SourceLocationE']
+  warnings.warn(f"unable to load libtensorflow_io_plugins.so: {e}")
+/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/__init__.py:104: UserWarning: file system plugins are not loaded: unable to open file: libtensorflow_io.so, from paths: ['/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/libtensorflow_io.so']
+caused by: ['/opt/conda/lib/python3.10/site-packages/tensorflow_io/python/ops/libtensorflow_io.so: undefined symbol: _ZTVN10tensorflow13GcsFileSystemE']
+  warnings.warn(f"file system plugins are not loaded: {e}")
+
+print('TensorFlow version:', tf.__version__)
+
+TensorFlow version: 2.12.0
+
+print("Num CPUs Available: ", len(tf.config.list_physical_devices('CPU')))
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
+Num CPUs Available:  1
+Num GPUs Available:  1
+
+#---------------------------------------------------------------------------79
+
+Setup
+
+class Paths:
+    train = os.path.join(DATA_DIR, 'train')
+    valid = os.path.join(DATA_DIR, 'validation')
+    test = os.path.join(DATA_DIR, 'test')
+
+sort_list = sorted  # list | sorted  # <DEVEL>
+
+train_ids = sort_list(os.listdir(Paths.train))
+valid_ids = sort_list(os.listdir(Paths.valid))
+test_ids = sort_list(os.listdir(Paths.test))
+print('n_samples (train, validation, test) =', len(train_ids), len(valid_ids), len(test_ids))
+
+n_samples (train, validation, test) = 20529 1856 2
+
+class ABI:
+    bands = {name: idx for idx, name in enumerate([
+        '08', '09', '10', '11', '12', '13', '14', '15', '16'])}
+    colors = {name: idx for idx, name in enumerate([
+        'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'yellow', 'black'])}
+
+N_TIMES_BEFORE = 4
+N_TIMES_AFTER = 3
+
+def normalize_range(data, bounds):
+    """Maps data to the range [0, 1]."""
+    return (data - bounds[0]) / (bounds[1] - bounds[0])
+
+_T11_BOUNDS = (243, 303)
+_CLOUD_TOP_TDIFF_BOUNDS = (-4, 5)
+_TDIFF_BOUNDS = (-4, 2)
+
+def get_ash_colors(sample_id, split_dir):
+    """
+    Based on bands: 11, 14, 15
+    
+    Args:
+        sample_id(str): The id of the example i.e. '1000216489776414077'
+        split_dir(str): The split directoryu i.e. 'test', 'train', 'val'
+    """
+    band15 = np.load(DATA_DIR + f"/{split_dir}/{sample_id}/band_15.npy")
+    band14 = np.load(DATA_DIR + f"/{split_dir}/{sample_id}/band_14.npy")
+    band11 = np.load(DATA_DIR + f"/{split_dir}/{sample_id}/band_11.npy")
+
+    r = normalize_range(band15 - band14, _TDIFF_BOUNDS)
+    g = normalize_range(band14 - band11, _CLOUD_TOP_TDIFF_BOUNDS)
+    b = normalize_range(band14, _T11_BOUNDS)
+    ash_colors = np.clip(np.stack([r, g, b], axis=2), 0, 1)
+    
+    return ash_colors
+
+def get_individual_mask(sample_id, split_dir):
+    masks_path = DATA_DIR + f"/{split_dir}/{sample_id}/human_individual_masks.npy"
+    pixel_mask = np.load(masks_path)
+    return pixel_mask
+
+def get_pixel_mask(sample_id, split_dir):
+    masks_path = DATA_DIR + f"/{split_dir}/{sample_id}/human_pixel_masks.npy"
+    pixel_mask = np.load(masks_path)
+    return pixel_mask
+
+Check some values (DEVEL)
+
+sample_id = 7829917977180135058  # train_ids[3]
+
+print(f'Check `ash_colors` on one of the samples: {sample_id}')
+
+ash_colors = get_ash_colors(sample_id, 'train')[..., N_TIMES_BEFORE]
+
+print(ash_colors.shape)
+for color in range(3):
+    array = ash_colors[..., color]
+    print(array.min(), array.max())
+
+Check `ash_colors` on one of the samples: 7829917977180135058
+(256, 256, 3)
+0.0 0.50921124
+0.097476535 0.86938816
+0.031865694 0.81146187
+
+pixel_mask = get_pixel_mask(sample_id, 'train')
+
+print(pixel_mask.shape)
+print(pixel_mask.min(), pixel_mask.max())
+
+(256, 256, 1)
+0 1
+
+Model
+
+SEED = 42
+
+class Config:
+    
+    img_size = (256, 256)
+    
+    model = 'deeplabv3plus'  # unet | deeplabv3plus
+    
+    num_epochs = 10  # <DEVEL> else 10
+    num_classes = 1
+    batch_size = 16  # <DEVEL> else 16 or 32
+    
+    threshold = 0.40
+    
+    seed = SEED
+
+# https://keras.io/examples/keras_recipes/reproducibility_recipes/
+
+# Set the seed using keras.utils.set_random_seed. This will set:
+# 1) `numpy` seed
+# 2) `tensorflow` random seed
+# 3) `python` random seed
+keras.utils.set_random_seed(Config.seed)
+
+# See also:
+# tf.config.experimental.enable_op_determinism()
+
+class UNet:
+    '''U-Net model.
+    
+    Inspired by and adapted from:
+    - https://keras.io/examples/vision/oxford_pets_image_segmentation
+    - https://www.kaggle.com/code/shashwatraman/simple-unet-baseline-train-lb-0-580
+    - https://www.coursera.org/learn/advanced-computer-vision-with-tensorflow/home/week/3
+    '''
+    
+    @classmethod
+    def conv2d_block(cls, input_tensor, n_filters, kernel_size=3):
+        x = input_tensor
+        for i in range(2):
+            x = tf.keras.layers.SeparableConv2D(
+                filters = n_filters, kernel_size=(kernel_size, kernel_size), padding='same')(x)
+            #? kernel_initializer = 'he_normal'
+            x = tf.keras.layers.BatchNormalization()(x)
+            x = tf.keras.layers.Activation('relu')(x)
+        return x
+
+    @classmethod
+    def encoder_block(cls, inputs, n_filters, pool_size, dropout):
+        f = cls.conv2d_block(inputs, n_filters=n_filters)
+        p = tf.keras.layers.MaxPooling2D(pool_size)(f)
+        p = tf.keras.layers.Dropout(dropout)(p)
+        return f, p
+
+    @classmethod
+    def encoder(cls, inputs, dropout=0.1):
+        f1, p1 = cls.encoder_block(inputs, n_filters=64, pool_size=(2,2), dropout=dropout)
+        f2, p2 = cls.encoder_block(p1, n_filters=128, pool_size=(2,2), dropout=dropout)
+        f3, p3 = cls.encoder_block(p2, n_filters=256, pool_size=(2,2), dropout=dropout)
+        f4, p4 = cls.encoder_block(p3, n_filters=512, pool_size=(2,2), dropout=dropout)
+        return p4, (f1, f2, f3, f4)
+
+    @classmethod
+    def bottleneck(cls, inputs):
+        bottle_neck = cls.conv2d_block(inputs, n_filters=1024)
+        return bottle_neck
+
+    @classmethod
+    def decoder_block(cls, inputs, conv_output, n_filters, kernel_size, strides, dropout):
+        u = tf.keras.layers.Conv2DTranspose(
+            n_filters, kernel_size, strides=strides, padding = 'same')(inputs)
+        u = tf.keras.layers.BatchNormalization()(u)
+        c = tf.keras.layers.concatenate([u, conv_output])
+        c = tf.keras.layers.Dropout(dropout)(c)
+        c = cls.conv2d_block(c, n_filters, kernel_size=3)
+        return c
+
+    @classmethod
+    def decoder(cls, inputs, convs, num_classes, dropout=0.1):
+        f1, f2, f3, f4 = convs
+        c6 = cls.decoder_block(inputs, f4, n_filters=512, kernel_size=(3,3), strides=(2,2), dropout=dropout)
+        c7 = cls.decoder_block(c6, f3, n_filters=256, kernel_size=(3,3), strides=(2,2), dropout=dropout)
+        c8 = cls.decoder_block(c7, f2, n_filters=128, kernel_size=(3,3), strides=(2,2), dropout=dropout)
+        c9 = cls.decoder_block(c8, f1, n_filters=64, kernel_size=(3,3), strides=(2,2), dropout=dropout)
+        if num_classes == 1:
+            activation = "sigmoid"
+        else:
+            activation = "softmax"
+        outputs = layers.Conv2D(num_classes, kernel_size=3, activation=activation, padding="same")(c9)
+        return outputs
+
+    @classmethod
+    def model(cls, image_size, num_classes):
+        inputs = tf.keras.layers.Input(shape=(image_size,image_size,3))
+        encoder_output, convs = cls.encoder(inputs)
+        #model = tf.keras.Model(inputs=inputs, outputs=encoder_output)  # debug
+        bottle_neck = cls.bottleneck(encoder_output)
+        outputs = cls.decoder(bottle_neck, convs, num_classes)
+        model = tf.keras.Model(name=cls.__name__, inputs=inputs, outputs=outputs)
+        return model
+
+ 
+
+class DeepLabV3Plus:
+    '''DeepLabV3+ model.
+    
+    Adapted from:
+    - https://keras.io/examples/vision/deeplabv3_plus/#inference-using-colormap-overlay
+    '''
+    
+    @classmethod
+    def convolution_block(
+        cls,
+        block_input,
+        num_filters=256,
+        kernel_size=3,
+        dilation_rate=1,
+        padding="same",
+        use_bias=False,
+    ):
+        x = layers.Conv2D(
+            num_filters,
+            kernel_size=kernel_size,
+            dilation_rate=dilation_rate,
+            padding="same",
+            use_bias=use_bias,
+            kernel_initializer=keras.initializers.HeNormal(),
+        )(block_input)
+        x = layers.BatchNormalization()(x)
+        return tf.nn.relu(x)
+
+    @classmethod
+    def DilatedSpatialPyramidPooling(cls, dspp_input):
+        dims = dspp_input.shape
+        x = layers.AveragePooling2D(pool_size=(dims[-3], dims[-2]))(dspp_input)
+        x = cls.convolution_block(x, kernel_size=1, use_bias=True)
+        out_pool = layers.UpSampling2D(
+            size=(dims[-3] // x.shape[1], dims[-2] // x.shape[2]), interpolation="bilinear",
+        )(x)
+
+        out_1 = cls.convolution_block(dspp_input, kernel_size=1, dilation_rate=1)
+        out_6 = cls.convolution_block(dspp_input, kernel_size=3, dilation_rate=6)
+        out_12 = cls.convolution_block(dspp_input, kernel_size=3, dilation_rate=12)
+        out_18 = cls.convolution_block(dspp_input, kernel_size=3, dilation_rate=18)
+
+        x = layers.Concatenate(axis=-1)([out_pool, out_1, out_6, out_12, out_18])
+        output = cls.convolution_block(x, kernel_size=1)
+        return output
+    
+    @classmethod
+    def model(cls, image_size, num_classes, weights):
+        
+        model_input = keras.Input(shape=(image_size, image_size, 3))
+        
+        resnet50 = keras.applications.ResNet50(
+            weights=weights, include_top=False, input_tensor=model_input,
+        )
+        resnet50.trainable = False
+        print('resnet50.trainable =', resnet50.trainable)
+        
+        x = resnet50.get_layer("conv4_block6_2_relu").output
+        x = cls.DilatedSpatialPyramidPooling(x)
+
+        input_a = layers.UpSampling2D(
+            size=(image_size // 4 // x.shape[1], image_size // 4 // x.shape[2]),
+            interpolation="bilinear",
+        )(x)
+        input_b = resnet50.get_layer("conv2_block3_2_relu").output
+        input_b = cls.convolution_block(input_b, num_filters=48, kernel_size=1)
+
+        x = layers.Concatenate(axis=-1)([input_a, input_b])
+        x = cls.convolution_block(x)
+        x = cls.convolution_block(x)
+        x = layers.UpSampling2D(
+            size=(image_size // x.shape[1], image_size // x.shape[2]),
+            interpolation="bilinear",
+        )(x)
+        
+        if num_classes == 1:
+            activation = "sigmoid"
+        else:
+            activation = "softmax"
+        model_output = layers.Conv2D(num_classes, kernel_size=(1, 1), activation=activation, padding="same")(x)
+        
+        return keras.Model(name=cls.__name__, inputs=model_input, outputs=model_output)    
+
+#import tensorflow_hub as hub
+#
+#model = tf.keras.Sequential([
+#    keras.Input(shape=(224, 224, 3)),
+#    hub.KerasLayer("/kaggle/input/resnet-50/tensorflow2/feature-vector/1",
+#       trainable=False)
+#])
+#    
+#model.summary()
+
+# Free up RAM in case the model definition cells were run multiple times
+keras.backend.clear_session()
+
+
+# Build model
+if Config.model == 'unet':
+    model = UNet.model(image_size=256, num_classes=1)
+    PREPROCESS = None
+
+elif Config.model == 'deeplabv3plus':
+    resnet50_weights_path = '/kaggle/input/d/alexisbcook/resnet50/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
+    model = DeepLabV3Plus.model(image_size=256, num_classes=1, weights=resnet50_weights_path)
+    #PREPROCESS = 'resnet50'
+    PREPROCESS = None  # <DEVEL>
+    
+else:
+    raise NotImplementedError(f'model "{Config.model}"')
+    
+model.summary()
+
+resnet50.trainable = False
+Model: "DeepLabV3Plus"
+__________________________________________________________________________________________________
+ Layer (type)                   Output Shape         Param #     Connected to                     
+==================================================================================================
+ input_1 (InputLayer)           [(None, 256, 256, 3  0           []                               
+                                )]                                                                
+                                                                                                  
+ conv1_pad (ZeroPadding2D)      (None, 262, 262, 3)  0           ['input_1[0][0]']                
+                                                                                                  
+ conv1_conv (Conv2D)            (None, 128, 128, 64  9472        ['conv1_pad[0][0]']              
+                                )                                                                 
+                                                                                                  
+ conv1_bn (BatchNormalization)  (None, 128, 128, 64  256         ['conv1_conv[0][0]']             
+                                )                                                                 
+                                                                                                  
+ conv1_relu (Activation)        (None, 128, 128, 64  0           ['conv1_bn[0][0]']               
+                                )                                                                 
+                                                                                                  
+ pool1_pad (ZeroPadding2D)      (None, 130, 130, 64  0           ['conv1_relu[0][0]']             
+                                )                                                                 
+                                                                                                  
+ pool1_pool (MaxPooling2D)      (None, 64, 64, 64)   0           ['pool1_pad[0][0]']              
+                                                                                                  
+ conv2_block1_1_conv (Conv2D)   (None, 64, 64, 64)   4160        ['pool1_pool[0][0]']             
+                                                                                                  
+ conv2_block1_1_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block1_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block1_1_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block1_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block1_2_conv (Conv2D)   (None, 64, 64, 64)   36928       ['conv2_block1_1_relu[0][0]']    
+                                                                                                  
+ conv2_block1_2_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block1_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block1_2_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block1_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block1_0_conv (Conv2D)   (None, 64, 64, 256)  16640       ['pool1_pool[0][0]']             
+                                                                                                  
+ conv2_block1_3_conv (Conv2D)   (None, 64, 64, 256)  16640       ['conv2_block1_2_relu[0][0]']    
+                                                                                                  
+ conv2_block1_0_bn (BatchNormal  (None, 64, 64, 256)  1024       ['conv2_block1_0_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block1_3_bn (BatchNormal  (None, 64, 64, 256)  1024       ['conv2_block1_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block1_add (Add)         (None, 64, 64, 256)  0           ['conv2_block1_0_bn[0][0]',      
+                                                                  'conv2_block1_3_bn[0][0]']      
+                                                                                                  
+ conv2_block1_out (Activation)  (None, 64, 64, 256)  0           ['conv2_block1_add[0][0]']       
+                                                                                                  
+ conv2_block2_1_conv (Conv2D)   (None, 64, 64, 64)   16448       ['conv2_block1_out[0][0]']       
+                                                                                                  
+ conv2_block2_1_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block2_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block2_1_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block2_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block2_2_conv (Conv2D)   (None, 64, 64, 64)   36928       ['conv2_block2_1_relu[0][0]']    
+                                                                                                  
+ conv2_block2_2_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block2_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block2_2_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block2_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block2_3_conv (Conv2D)   (None, 64, 64, 256)  16640       ['conv2_block2_2_relu[0][0]']    
+                                                                                                  
+ conv2_block2_3_bn (BatchNormal  (None, 64, 64, 256)  1024       ['conv2_block2_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block2_add (Add)         (None, 64, 64, 256)  0           ['conv2_block1_out[0][0]',       
+                                                                  'conv2_block2_3_bn[0][0]']      
+                                                                                                  
+ conv2_block2_out (Activation)  (None, 64, 64, 256)  0           ['conv2_block2_add[0][0]']       
+                                                                                                  
+ conv2_block3_1_conv (Conv2D)   (None, 64, 64, 64)   16448       ['conv2_block2_out[0][0]']       
+                                                                                                  
+ conv2_block3_1_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block3_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block3_1_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block3_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block3_2_conv (Conv2D)   (None, 64, 64, 64)   36928       ['conv2_block3_1_relu[0][0]']    
+                                                                                                  
+ conv2_block3_2_bn (BatchNormal  (None, 64, 64, 64)  256         ['conv2_block3_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block3_2_relu (Activatio  (None, 64, 64, 64)  0           ['conv2_block3_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv2_block3_3_conv (Conv2D)   (None, 64, 64, 256)  16640       ['conv2_block3_2_relu[0][0]']    
+                                                                                                  
+ conv2_block3_3_bn (BatchNormal  (None, 64, 64, 256)  1024       ['conv2_block3_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv2_block3_add (Add)         (None, 64, 64, 256)  0           ['conv2_block2_out[0][0]',       
+                                                                  'conv2_block3_3_bn[0][0]']      
+                                                                                                  
+ conv2_block3_out (Activation)  (None, 64, 64, 256)  0           ['conv2_block3_add[0][0]']       
+                                                                                                  
+ conv3_block1_1_conv (Conv2D)   (None, 32, 32, 128)  32896       ['conv2_block3_out[0][0]']       
+                                                                                                  
+ conv3_block1_1_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block1_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block1_1_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block1_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block1_2_conv (Conv2D)   (None, 32, 32, 128)  147584      ['conv3_block1_1_relu[0][0]']    
+                                                                                                  
+ conv3_block1_2_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block1_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block1_2_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block1_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block1_0_conv (Conv2D)   (None, 32, 32, 512)  131584      ['conv2_block3_out[0][0]']       
+                                                                                                  
+ conv3_block1_3_conv (Conv2D)   (None, 32, 32, 512)  66048       ['conv3_block1_2_relu[0][0]']    
+                                                                                                  
+ conv3_block1_0_bn (BatchNormal  (None, 32, 32, 512)  2048       ['conv3_block1_0_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block1_3_bn (BatchNormal  (None, 32, 32, 512)  2048       ['conv3_block1_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block1_add (Add)         (None, 32, 32, 512)  0           ['conv3_block1_0_bn[0][0]',      
+                                                                  'conv3_block1_3_bn[0][0]']      
+                                                                                                  
+ conv3_block1_out (Activation)  (None, 32, 32, 512)  0           ['conv3_block1_add[0][0]']       
+                                                                                                  
+ conv3_block2_1_conv (Conv2D)   (None, 32, 32, 128)  65664       ['conv3_block1_out[0][0]']       
+                                                                                                  
+ conv3_block2_1_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block2_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block2_1_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block2_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block2_2_conv (Conv2D)   (None, 32, 32, 128)  147584      ['conv3_block2_1_relu[0][0]']    
+                                                                                                  
+ conv3_block2_2_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block2_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block2_2_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block2_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block2_3_conv (Conv2D)   (None, 32, 32, 512)  66048       ['conv3_block2_2_relu[0][0]']    
+                                                                                                  
+ conv3_block2_3_bn (BatchNormal  (None, 32, 32, 512)  2048       ['conv3_block2_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block2_add (Add)         (None, 32, 32, 512)  0           ['conv3_block1_out[0][0]',       
+                                                                  'conv3_block2_3_bn[0][0]']      
+                                                                                                  
+ conv3_block2_out (Activation)  (None, 32, 32, 512)  0           ['conv3_block2_add[0][0]']       
+                                                                                                  
+ conv3_block3_1_conv (Conv2D)   (None, 32, 32, 128)  65664       ['conv3_block2_out[0][0]']       
+                                                                                                  
+ conv3_block3_1_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block3_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block3_1_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block3_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block3_2_conv (Conv2D)   (None, 32, 32, 128)  147584      ['conv3_block3_1_relu[0][0]']    
+                                                                                                  
+ conv3_block3_2_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block3_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block3_2_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block3_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block3_3_conv (Conv2D)   (None, 32, 32, 512)  66048       ['conv3_block3_2_relu[0][0]']    
+                                                                                                  
+ conv3_block3_3_bn (BatchNormal  (None, 32, 32, 512)  2048       ['conv3_block3_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block3_add (Add)         (None, 32, 32, 512)  0           ['conv3_block2_out[0][0]',       
+                                                                  'conv3_block3_3_bn[0][0]']      
+                                                                                                  
+ conv3_block3_out (Activation)  (None, 32, 32, 512)  0           ['conv3_block3_add[0][0]']       
+                                                                                                  
+ conv3_block4_1_conv (Conv2D)   (None, 32, 32, 128)  65664       ['conv3_block3_out[0][0]']       
+                                                                                                  
+ conv3_block4_1_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block4_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block4_1_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block4_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block4_2_conv (Conv2D)   (None, 32, 32, 128)  147584      ['conv3_block4_1_relu[0][0]']    
+                                                                                                  
+ conv3_block4_2_bn (BatchNormal  (None, 32, 32, 128)  512        ['conv3_block4_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block4_2_relu (Activatio  (None, 32, 32, 128)  0          ['conv3_block4_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv3_block4_3_conv (Conv2D)   (None, 32, 32, 512)  66048       ['conv3_block4_2_relu[0][0]']    
+                                                                                                  
+ conv3_block4_3_bn (BatchNormal  (None, 32, 32, 512)  2048       ['conv3_block4_3_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv3_block4_add (Add)         (None, 32, 32, 512)  0           ['conv3_block3_out[0][0]',       
+                                                                  'conv3_block4_3_bn[0][0]']      
+                                                                                                  
+ conv3_block4_out (Activation)  (None, 32, 32, 512)  0           ['conv3_block4_add[0][0]']       
+                                                                                                  
+ conv4_block1_1_conv (Conv2D)   (None, 16, 16, 256)  131328      ['conv3_block4_out[0][0]']       
+                                                                                                  
+ conv4_block1_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block1_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block1_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block1_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block1_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block1_1_relu[0][0]']    
+                                                                                                  
+ conv4_block1_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block1_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block1_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block1_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block1_0_conv (Conv2D)   (None, 16, 16, 1024  525312      ['conv3_block4_out[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block1_3_conv (Conv2D)   (None, 16, 16, 1024  263168      ['conv4_block1_2_relu[0][0]']    
+                                )                                                                 
+                                                                                                  
+ conv4_block1_0_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block1_0_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block1_3_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block1_3_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block1_add (Add)         (None, 16, 16, 1024  0           ['conv4_block1_0_bn[0][0]',      
+                                )                                 'conv4_block1_3_bn[0][0]']      
+                                                                                                  
+ conv4_block1_out (Activation)  (None, 16, 16, 1024  0           ['conv4_block1_add[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block2_1_conv (Conv2D)   (None, 16, 16, 256)  262400      ['conv4_block1_out[0][0]']       
+                                                                                                  
+ conv4_block2_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block2_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block2_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block2_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block2_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block2_1_relu[0][0]']    
+                                                                                                  
+ conv4_block2_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block2_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block2_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block2_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block2_3_conv (Conv2D)   (None, 16, 16, 1024  263168      ['conv4_block2_2_relu[0][0]']    
+                                )                                                                 
+                                                                                                  
+ conv4_block2_3_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block2_3_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block2_add (Add)         (None, 16, 16, 1024  0           ['conv4_block1_out[0][0]',       
+                                )                                 'conv4_block2_3_bn[0][0]']      
+                                                                                                  
+ conv4_block2_out (Activation)  (None, 16, 16, 1024  0           ['conv4_block2_add[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block3_1_conv (Conv2D)   (None, 16, 16, 256)  262400      ['conv4_block2_out[0][0]']       
+                                                                                                  
+ conv4_block3_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block3_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block3_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block3_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block3_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block3_1_relu[0][0]']    
+                                                                                                  
+ conv4_block3_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block3_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block3_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block3_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block3_3_conv (Conv2D)   (None, 16, 16, 1024  263168      ['conv4_block3_2_relu[0][0]']    
+                                )                                                                 
+                                                                                                  
+ conv4_block3_3_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block3_3_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block3_add (Add)         (None, 16, 16, 1024  0           ['conv4_block2_out[0][0]',       
+                                )                                 'conv4_block3_3_bn[0][0]']      
+                                                                                                  
+ conv4_block3_out (Activation)  (None, 16, 16, 1024  0           ['conv4_block3_add[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block4_1_conv (Conv2D)   (None, 16, 16, 256)  262400      ['conv4_block3_out[0][0]']       
+                                                                                                  
+ conv4_block4_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block4_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block4_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block4_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block4_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block4_1_relu[0][0]']    
+                                                                                                  
+ conv4_block4_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block4_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block4_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block4_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block4_3_conv (Conv2D)   (None, 16, 16, 1024  263168      ['conv4_block4_2_relu[0][0]']    
+                                )                                                                 
+                                                                                                  
+ conv4_block4_3_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block4_3_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block4_add (Add)         (None, 16, 16, 1024  0           ['conv4_block3_out[0][0]',       
+                                )                                 'conv4_block4_3_bn[0][0]']      
+                                                                                                  
+ conv4_block4_out (Activation)  (None, 16, 16, 1024  0           ['conv4_block4_add[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block5_1_conv (Conv2D)   (None, 16, 16, 256)  262400      ['conv4_block4_out[0][0]']       
+                                                                                                  
+ conv4_block5_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block5_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block5_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block5_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block5_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block5_1_relu[0][0]']    
+                                                                                                  
+ conv4_block5_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block5_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block5_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block5_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block5_3_conv (Conv2D)   (None, 16, 16, 1024  263168      ['conv4_block5_2_relu[0][0]']    
+                                )                                                                 
+                                                                                                  
+ conv4_block5_3_bn (BatchNormal  (None, 16, 16, 1024  4096       ['conv4_block5_3_conv[0][0]']    
+ ization)                       )                                                                 
+                                                                                                  
+ conv4_block5_add (Add)         (None, 16, 16, 1024  0           ['conv4_block4_out[0][0]',       
+                                )                                 'conv4_block5_3_bn[0][0]']      
+                                                                                                  
+ conv4_block5_out (Activation)  (None, 16, 16, 1024  0           ['conv4_block5_add[0][0]']       
+                                )                                                                 
+                                                                                                  
+ conv4_block6_1_conv (Conv2D)   (None, 16, 16, 256)  262400      ['conv4_block5_out[0][0]']       
+                                                                                                  
+ conv4_block6_1_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block6_1_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block6_1_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block6_1_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ conv4_block6_2_conv (Conv2D)   (None, 16, 16, 256)  590080      ['conv4_block6_1_relu[0][0]']    
+                                                                                                  
+ conv4_block6_2_bn (BatchNormal  (None, 16, 16, 256)  1024       ['conv4_block6_2_conv[0][0]']    
+ ization)                                                                                         
+                                                                                                  
+ conv4_block6_2_relu (Activatio  (None, 16, 16, 256)  0          ['conv4_block6_2_bn[0][0]']      
+ n)                                                                                               
+                                                                                                  
+ average_pooling2d (AveragePool  (None, 1, 1, 256)   0           ['conv4_block6_2_relu[0][0]']    
+ ing2D)                                                                                           
+                                                                                                  
+ conv2d (Conv2D)                (None, 1, 1, 256)    65792       ['average_pooling2d[0][0]']      
+                                                                                                  
+ batch_normalization (BatchNorm  (None, 1, 1, 256)   1024        ['conv2d[0][0]']                 
+ alization)                                                                                       
+                                                                                                  
+ conv2d_1 (Conv2D)              (None, 16, 16, 256)  65536       ['conv4_block6_2_relu[0][0]']    
+                                                                                                  
+ conv2d_2 (Conv2D)              (None, 16, 16, 256)  589824      ['conv4_block6_2_relu[0][0]']    
+                                                                                                  
+ conv2d_3 (Conv2D)              (None, 16, 16, 256)  589824      ['conv4_block6_2_relu[0][0]']    
+                                                                                                  
+ conv2d_4 (Conv2D)              (None, 16, 16, 256)  589824      ['conv4_block6_2_relu[0][0]']    
+                                                                                                  
+ tf.nn.relu (TFOpLambda)        (None, 1, 1, 256)    0           ['batch_normalization[0][0]']    
+                                                                                                  
+ batch_normalization_1 (BatchNo  (None, 16, 16, 256)  1024       ['conv2d_1[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ batch_normalization_2 (BatchNo  (None, 16, 16, 256)  1024       ['conv2d_2[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ batch_normalization_3 (BatchNo  (None, 16, 16, 256)  1024       ['conv2d_3[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ batch_normalization_4 (BatchNo  (None, 16, 16, 256)  1024       ['conv2d_4[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ up_sampling2d (UpSampling2D)   (None, 16, 16, 256)  0           ['tf.nn.relu[0][0]']             
+                                                                                                  
+ tf.nn.relu_1 (TFOpLambda)      (None, 16, 16, 256)  0           ['batch_normalization_1[0][0]']  
+                                                                                                  
+ tf.nn.relu_2 (TFOpLambda)      (None, 16, 16, 256)  0           ['batch_normalization_2[0][0]']  
+                                                                                                  
+ tf.nn.relu_3 (TFOpLambda)      (None, 16, 16, 256)  0           ['batch_normalization_3[0][0]']  
+                                                                                                  
+ tf.nn.relu_4 (TFOpLambda)      (None, 16, 16, 256)  0           ['batch_normalization_4[0][0]']  
+                                                                                                  
+ concatenate (Concatenate)      (None, 16, 16, 1280  0           ['up_sampling2d[0][0]',          
+                                )                                 'tf.nn.relu_1[0][0]',           
+                                                                  'tf.nn.relu_2[0][0]',           
+                                                                  'tf.nn.relu_3[0][0]',           
+                                                                  'tf.nn.relu_4[0][0]']           
+                                                                                                  
+ conv2d_5 (Conv2D)              (None, 16, 16, 256)  327680      ['concatenate[0][0]']            
+                                                                                                  
+ batch_normalization_5 (BatchNo  (None, 16, 16, 256)  1024       ['conv2d_5[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ conv2d_6 (Conv2D)              (None, 64, 64, 48)   3072        ['conv2_block3_2_relu[0][0]']    
+                                                                                                  
+ tf.nn.relu_5 (TFOpLambda)      (None, 16, 16, 256)  0           ['batch_normalization_5[0][0]']  
+                                                                                                  
+ batch_normalization_6 (BatchNo  (None, 64, 64, 48)  192         ['conv2d_6[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ up_sampling2d_1 (UpSampling2D)  (None, 64, 64, 256)  0          ['tf.nn.relu_5[0][0]']           
+                                                                                                  
+ tf.nn.relu_6 (TFOpLambda)      (None, 64, 64, 48)   0           ['batch_normalization_6[0][0]']  
+                                                                                                  
+ concatenate_1 (Concatenate)    (None, 64, 64, 304)  0           ['up_sampling2d_1[0][0]',        
+                                                                  'tf.nn.relu_6[0][0]']           
+                                                                                                  
+ conv2d_7 (Conv2D)              (None, 64, 64, 256)  700416      ['concatenate_1[0][0]']          
+                                                                                                  
+ batch_normalization_7 (BatchNo  (None, 64, 64, 256)  1024       ['conv2d_7[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ tf.nn.relu_7 (TFOpLambda)      (None, 64, 64, 256)  0           ['batch_normalization_7[0][0]']  
+                                                                                                  
+ conv2d_8 (Conv2D)              (None, 64, 64, 256)  589824      ['tf.nn.relu_7[0][0]']           
+                                                                                                  
+ batch_normalization_8 (BatchNo  (None, 64, 64, 256)  1024       ['conv2d_8[0][0]']               
+ rmalization)                                                                                     
+                                                                                                  
+ tf.nn.relu_8 (TFOpLambda)      (None, 64, 64, 256)  0           ['batch_normalization_8[0][0]']  
+                                                                                                  
+ up_sampling2d_2 (UpSampling2D)  (None, 256, 256, 25  0          ['tf.nn.relu_8[0][0]']           
+                                6)                                                                
+                                                                                                  
+ conv2d_9 (Conv2D)              (None, 256, 256, 1)  257         ['up_sampling2d_2[0][0]']        
+                                                                                                  
+==================================================================================================
+Total params: 11,852,353
+Trainable params: 3,526,241
+Non-trainable params: 8,326,112
+__________________________________________________________________________________________________
+
+Prepare datasets
+
+N_SAMPLES = None  # <DEVEL> None to take all
+N_PARTIAL = 128  # 128
+
+class AshColorSingleFrames(keras.utils.Sequence):
+    """Helper to iterate over the data (as Numpy arrays)."""
+
+    def __init__(self, batch_size, img_size, sample_ids, split_dir, preprocess=None, n_samples=None):
+        self.batch_size = batch_size
+        self.img_size = img_size
+        self.split_dir = split_dir
+        self.sample_ids = sample_ids[:n_samples]
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return math.ceil(len(self.sample_ids) / self.batch_size)
+
+    def __getitem__(self, idx):
+        """Returns tuple (input, target) correspond to batch #idx."""
+        i = idx * self.batch_size
+        batch_sample_ids = self.sample_ids[i : i + self.batch_size]
+        
+        x = np.zeros((self.batch_size,) + self.img_size + (3,), dtype="float32")
+        for j, sample_id in enumerate(batch_sample_ids):
+            
+            img = get_ash_colors(sample_id, self.split_dir)[..., N_TIMES_BEFORE]
+            
+            if self.preprocess == 'resnet50':
+                img = keras.applications.resnet50.preprocess_input(img)
+            elif self.preprocess is not None:
+                raise NotImplementedError(f'preprocess "{preprocess}"')
+            
+            x[j] = img
+
+        y = np.zeros((self.batch_size,) + self.img_size + (1,), dtype="uint8")
+        if self.split_dir != 'test':
+            for j, sample_id in enumerate(batch_sample_ids):
+                img = get_pixel_mask(sample_id, self.split_dir)
+                y[j] = img
+        
+        return x, y
+
+train_set = AshColorSingleFrames(
+    Config.batch_size, Config.img_size, train_ids, 'train',
+    preprocess=PREPROCESS, n_samples=N_SAMPLES)  # <DEVEL>
+print('number of batches:', len(train_set))
+
+number of batches: 1284
+
+valid_set = AshColorSingleFrames(
+    Config.batch_size, Config.img_size, valid_ids, 'validation',
+    preprocess=PREPROCESS, n_samples=N_SAMPLES)  # <DEVEL>
+print('number of batches:', len(valid_set))
+
+number of batches: 116
+
+partial_set = AshColorSingleFrames(
+    Config.batch_size, Config.img_size, valid_ids, 'validation',
+    preprocess=PREPROCESS, n_samples=N_PARTIAL)  # <DEVEL>
+print('number of batches:', len(partial_set))
+
+number of batches: 8
+
+test_set = AshColorSingleFrames(
+    Config.batch_size, Config.img_size, test_ids, 'test',
+    preprocess=PREPROCESS)
+print('number of batches:', len(test_set))
+
+number of batches: 1
+
+# Check batch dimensions (x, y):
+
+train_set[0][0].shape, train_set[0][1].shape
+
+((16, 256, 256, 3), (16, 256, 256, 1))
+
+Training
+
+def dice_coef(y_true, y_pred, smooth=0.001, threshold=None):
+    '''Dice coefficient.
+    
+    Adapted from:
+    - https://stackoverflow.com/questions/72195156/correct-implementation-of-dice-loss-in-tensorflow-keras
+    - https://www.kaggle.com/code/shashwatraman/simple-unet-baseline-train-lb-0-580
+    '''
+    
+    y_true_f = backend.flatten(tf.cast(y_true, tf.float32))
+    y_pred_f = backend.flatten(tf.cast(y_pred, tf.float32))
+    # ValueError: No gradients provided for any variable
+    if threshold is not None:
+        y_pred_f = backend.flatten(
+            tf.cast(tf.math.greater(tf.cast(y_pred, tf.float32), threshold), tf.float32))
+    intersection = backend.sum(y_true_f * y_pred_f)
+    dice = (2. * intersection + smooth) / (backend.sum(y_true_f) + backend.sum(y_pred_f) + smooth)
+    return dice
+
+def threshold_dice_coef(y_true, y_pred, smooth=0.001):
+    return dice_coef(y_true, y_pred, smooth=smooth, threshold=Config.threshold)
+
+def dice_loss(y_true, y_pred):
+    return 1 - dice_coef(y_true, y_pred)
+
+sample_id = 7829917977180135058  # train_ids[3]
+
+print(f'Check `dice_coef()` on one of the samples: {sample_id}')
+
+merged_mask = get_pixel_mask(sample_id, 'train')
+indiv_masks = get_individual_mask(sample_id, 'train')
+
+print(dice_coef(tf.convert_to_tensor(merged_mask),
+                tf.convert_to_tensor(merged_mask)))
+for idv in range(6):
+    print(dice_coef(tf.convert_to_tensor(merged_mask),
+                    tf.convert_to_tensor(indiv_masks[..., idv])))
+
+Check `dice_coef()` on one of the samples: 7829917977180135058
+tf.Tensor(1.0, shape=(), dtype=float32)
+tf.Tensor(0.8743467, shape=(), dtype=float32)
+tf.Tensor(0.83587146, shape=(), dtype=float32)
+tf.Tensor(0.7393573, shape=(), dtype=float32)
+tf.Tensor(0.8522139, shape=(), dtype=float32)
+tf.Tensor(0.87988245, shape=(), dtype=float32)
+tf.Tensor(0.84089667, shape=(), dtype=float32)
+
+if TRAIN:
+    checkpoint_path = f"contrails_{file_time_str}.h5"
+
+print(f'checkpoint file: {checkpoint_path}')
+
+checkpoint file: contrails_2023-07-20_20-57-19.h5
+
+# Learning rate scheduler:
+# - https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules
+# - https://www.tensorflow.org/api_docs/python/tf/keras/optimizers/schedules/CosineDecay
+# Note: CosineDecay got warmup in v2.13.1
+
+initial_learning_rate = 0.01
+decay_steps = len(train_set)
+decay_rate = 0.7
+
+cos_scheduler = keras.optimizers.schedules.CosineDecay(
+    initial_learning_rate, decay_steps)
+
+exp_scheduler = keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate, decay_steps, decay_rate)
+
+# Configure the model for training.
+
+# We use the "sparse" version of categorical_crossentropy
+# because our target data is integers.
+# See also:
+# loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+model.compile(optimizer="adam", loss='binary_crossentropy', metrics=[dice_coef])
+#model.compile(optimizer="adam", loss=dice_loss, metrics=[dice_coef])
+
+callbacks = [
+    #keras.callbacks.LearningRateScheduler(exp_scheduler),
+    keras.callbacks.ModelCheckpoint(checkpoint_path, save_best_only=True)
+]
+
+if TRAIN:
+    # Train the model, doing validation at the end of each epoch.
+    history = model.fit(
+        train_set, epochs=Config.num_epochs, validation_data=valid_set, callbacks=callbacks,
+        workers=4, use_multiprocessing=True)
+else:
+    # Loads the weights
+    model.load_weights(checkpoint_path)
+
+Epoch 1/10
+1284/1284 [==============================] - 676s 509ms/step - loss: 0.0280 - dice_coef: 0.0704 - val_loss: 0.0147 - val_dice_coef: 0.0050
+Epoch 2/10
+1284/1284 [==============================] - 655s 508ms/step - loss: 0.0212 - dice_coef: 0.1309 - val_loss: 0.0212 - val_dice_coef: 0.0024
+Epoch 3/10
+1284/1284 [==============================] - 656s 510ms/step - loss: 0.0199 - dice_coef: 0.1584 - val_loss: 0.0259 - val_dice_coef: 0.0366
+Epoch 4/10
+1284/1284 [==============================] - 646s 502ms/step - loss: 0.0190 - dice_coef: 0.1783 - val_loss: 0.0121 - val_dice_coef: 0.0341
+Epoch 5/10
+1284/1284 [==============================] - 668s 518ms/step - loss: 0.0184 - dice_coef: 0.1929 - val_loss: 0.0467 - val_dice_coef: 0.0162
+Epoch 6/10
+1284/1284 [==============================] - 677s 526ms/step - loss: 0.0178 - dice_coef: 0.2063 - val_loss: 0.0143 - val_dice_coef: 0.0325
+Epoch 7/10
+1284/1284 [==============================] - 643s 499ms/step - loss: 0.0174 - dice_coef: 0.2187 - val_loss: 0.0256 - val_dice_coef: 9.2423e-04
+Epoch 8/10
+1284/1284 [==============================] - 649s 504ms/step - loss: 0.0169 - dice_coef: 0.2298 - val_loss: 0.0164 - val_dice_coef: 0.0254
+Epoch 9/10
+1284/1284 [==============================] - 697s 541ms/step - loss: 0.0166 - dice_coef: 0.2389 - val_loss: 0.1819 - val_dice_coef: 0.0111
+Epoch 10/10
+1284/1284 [==============================] - 655s 508ms/step - loss: 0.0163 - dice_coef: 0.2484 - val_loss: 0.0244 - val_dice_coef: 0.0091
+
+if TRAIN:
+    print('History', history.history.keys())
+
+    for var in ['loss', 'val_loss', 'dice_coef', 'val_dice_coef']:
+        plt.figure(figsize=(10, 3))
+        plt.plot(history.history[var])
+        plt.title(f'model {var}')
+        plt.ylabel(var)
+        plt.xlabel('epoch')
+        plt.legend(['train', 'val'], loc='upper left')
+        plt.show()
+
+History dict_keys(['loss', 'dice_coef', 'val_loss', 'val_dice_coef'])
+
+Evaluate
+
+def apply_threshold(pred, threshold):
+    return (pred > threshold).astype(np.int32)
+
+if not TRAIN:    
+    # Evaluate the model
+
+    ALL_BATCHES = True
+    BATCH_IDX = 0
+    SAMPLE_IDX = 1
+
+    if ALL_BATCHES:
+        loss, acc = model.evaluate(partial_set, verbose=2)
+    else:
+        eval_images, eval_masks = partial_set[BATCH_IDX]
+        loss, acc = model.evaluate(eval_images, eval_masks, verbose=2)
+
+    print("Saved model, accuracy: {:5.2f}%".format(100 * acc))
+
+    predictions = model.predict(partial_set)
+
+def eval_dice_coef(sample_set, pred_set, batch_size, threshold):
+    dice_coef_per_batch = np.full(len(sample_set), np.nan)
+    for idx in range(len(sample_set)):
+        x, y = sample_set[idx]
+        pred = pred_set[idx*batch_size:(idx + 1)*batch_size]
+        _coef = dice_coef(y, pred, threshold=threshold)
+        dice_coef_per_batch[idx] = _coef
+    return dice_coef_per_batch
+
+if not TRAIN:
+    _coefs = eval_dice_coef(
+        partial_set, predictions, batch_size=partial_set.batch_size, threshold=None)
+    print(f'w/o threshod: {_coefs.mean():.2%}')
+
+    _coefs = eval_dice_coef(
+        partial_set, predictions, batch_size=partial_set.batch_size, threshold=Config.threshold)
+    print(f'{Config.threshold}: {_coefs.mean():.2%}')
+
+def plot_prediction(img, truth, pred):
+
+    fig, axs = plt.subplots(1, 4, figsize=(16, 8))
+
+    axs[0].imshow(img)
+    axs[0].set_title("Ash Color Image")
+
+    axs[1].imshow(truth)
+    axs[1].set_title("Ground Truth")
+
+    axs[2].imshow(pred)
+    axs[2].set_title("Prediction")
+
+    axs[3].imshow(img)
+    axs[3].imshow(truth, cmap='Reds', alpha=.3, interpolation='none')
+    axs[3].set_title('Contrail mask on ash color image')
+
+    plt.tight_layout() 
+    plt.show()
+
+    return
+
+if not TRAIN:
+    eval_images, eval_masks = partial_set[BATCH_IDX]
+    idx = SAMPLE_IDX
+    threshold = Config.threshold
+    plot_prediction(
+        eval_images[idx], eval_masks[idx], apply_threshold(predictions[idx], threshold))
+
+Make predictions on test dataset
+
+predictions = model.predict(test_set)
+
+1/1 [==============================] - 2s 2s/step
+
+len(predictions)
+
+16
+
+Create a submission
+
+def rle_encode(x, fg_val=1):
+    """
+    Args:
+        x:  numpy array of shape (height, width), 1 - mask, 0 - background
+    Returns: run length encoding as list
+    """
+
+    dots = np.where(
+        x.T.flatten() == fg_val)[0]  # .T sets Fortran order down-then-right
+    run_lengths = []
+    prev = -2
+    for b in dots:
+        if b > prev + 1:
+            run_lengths.extend((b + 1, 0))
+        run_lengths[-1] += 1
+        prev = b
+    return run_lengths
+
+
+def list_to_string(x):
+    """
+    Converts list to a string representation
+    Empty list returns '-'
+    """
+    if x: # non-empty list
+        s = str(x).replace("[", "").replace("]", "").replace(",", "")
+    else:
+        s = '-'
+    return s
+
+test_recs = os.listdir(os.path.join(DATA_DIR, 'test'))
+
+submission = pd.read_csv(os.path.join(DATA_DIR, 'sample_submission.csv'), index_col='record_id')[0:0]
+
+for test_id, pred in zip(test_ids, predictions):
+    
+    mask = apply_threshold(pred, Config.threshold)
+    
+    # notice the we're converting rec to an `int` here:
+    submission.loc[int(test_id), 'encoded_pixels'] = list_to_string(rle_encode(mask))
+    
+submission.to_csv('submission.csv')
+
+print('Terminated', datetime.datetime.now(timezone('CET')).strftime(PRINT_TIME_FORMAT))
+
+Terminated 2023-07-20 22:52:47 CEST+0200
