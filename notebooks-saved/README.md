@@ -49,6 +49,8 @@ After 15 epochs:
 - train dice_coef: 0.5254
 - valid dice_coef: 0.3614 - encouraging
 
+Wrote contrails_2023-07-20_22-39-56.h5
+
 Conclusion:
 
 - Training resnet50 weights works.
@@ -58,8 +60,74 @@ Conclusion:
 
 ### [v20.1] DeepLabV3+, resume training, adapted for GCP
 
+Run on GCP.
+
+Restart from contrails_2023-07-20_22-39-56.h5 (v20)
+
+After 10 more epochs (total of 25):
+
+- train dice_coef: 0.6032
+- valid dice_coef: 0.3823 - not so much better then after 15 epochs (0.3614)
+
 WIP
 
-### [v21] U-Net: 15 epochs (history, auto threshold)
+### [v25 = v21] U-Net: 15 epochs (history, auto threshold)
 
-WIP
+- First "Save and Run All" cancelled because of foreseeable exceeding of GPU quota.
+- QuickSave -> **Submit -> Timeout**
+
+### [v24] DeepLabV3+, 20 epochs for submission
+
+QuickSave -> **Submit -> Timeout**
+
+### [v26] U-Net: 10 epochs (TFRecords)
+
+**Benchmark against v11** with refactored notebook and TFRecords
+
+- same number of model parameters
+- same constant learning rate (0.1)
+- v26 with TFRecords while v11 keras.Sequence
+
+After 10 epochs:
+
+- train dice_coef: 0.4980 vs previously 0.5028
+- valid dice_coef: 0.3556 vs previously 0.4263 - not so good (why?)
+
+Conclusion:
+
+- reduced runtime per epoch: from 31 min to 23 min (-26%, less then expected)
+- threshold optimization (0.3): 35.85% to 45.95% dice_coef
+
+### [v26.1] DeepLabV3+, 10 epochs (TFRecords)
+
+Run on GCP.
+
+- DeepLabV3+: 250 ms per epoch thanks to TFRecords (at least 4x speedup!)
+- U-Net: still 1 s per epoch
+
+After 10 epochs:
+
+- train dice_coef: 0.4458 
+- valid dice_coef: 0.3228 - does not generalize as good as U-Net
+
+Conclusion:
+
+- **TFRecords** leads to **significant speedup** for DeepLabV3 model.
+- But: **Why does a U-Net training step take so much longer than DeepLabV3?**
+- **How can we make DeepLabV3 generalize better?
+
+### [v27] U-Net, 10 epochs, for submission
+
+- QuickSave -> Submit
+- Features: TFRecords, history, auto-threshold.
+
+**Benchmarks against v11** of submission (see also v26)
+
+WIP - Check running time on Kaggle submission hardware
+
+### [v28] DeepLabV3, 10 epochs, for submission
+
+- QuickSave -> Submit
+- Features: TFRecords, history, auto-threshold.
+
+WIP - Check running time on Kaggle submission hardware
