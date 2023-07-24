@@ -153,8 +153,10 @@ First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 - 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
 
-### [07-24_18-25-59] DeepLabV3, reference (no-dropout)
+### [07-24_21-10-06] DeepLabV3, reference (no-dropout)
 
 Again DeepLabV3 for 10 epochs reference, checking reproducibility.
 
-WIP
+- 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765
+
+Much worse then v26.1, why?
