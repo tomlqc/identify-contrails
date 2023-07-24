@@ -1,7 +1,16 @@
 
 # Saved Notebooks
 
-Text dumps of the notebooks' "Save and Run All" versions. 
+- Notebook executed on GCP.
+- Text dumps of Kaggle notebooks' "Save and Run All" versions. 
+
+## How-to execute notebooks in GCP
+
+```
+nohup jupyter nbconvert --to notebook --execute ~/identify-contrails/notebooks/identify-contrails.ipynb --output identify-contrails-executed.ipynb &
+```
+
+Reference: https://nbconvert.readthedocs.io/en/latest/usage.html#notebook-and-preprocessors
 
 ## How to get these notebook dumps
 
@@ -82,6 +91,8 @@ QuickSave -> **Submit -> Timeout**
 
 ### [v26] U-Net: 10 epochs (TFRecords)
 
+Run on Kaggle in 4h27.
+
 **Benchmark against v11** with refactored notebook and TFRecords
 
 - same number of model parameters
@@ -118,16 +129,19 @@ Conclusion:
 
 ### [v27] U-Net, 10 epochs, for submission
 
-- QuickSave -> Submit
-- Features: TFRecords, history, auto-threshold.
+Features: TFRecords, history, auto-threshold.
+
+- QuickSave -> **Submit -> Timeout**
 
 **Benchmarks against v11** of submission (see also v26)
 
 WIP - Check running time on Kaggle submission hardware
 
-### [v28] DeepLabV3, 10 epochs, for submission
+### [v29 = v28] DeepLabV3, 10 epochs, for submission
 
-- QuickSave -> Submit
-- Features: TFRecords, history, auto-threshold.
+Features: TFRecords, history, auto-threshold.
 
-WIP - Check running time on Kaggle submission hardware
+- QuickSave -> Submit -> Timeout
+- "Save and Run All" in 01:02 -> Submit -> Successful
+
+**Submission: 0.478** (threshold of 0.2)
