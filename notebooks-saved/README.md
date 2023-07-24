@@ -145,3 +145,9 @@ Features: TFRecords, history, auto-threshold.
 - "Save and Run All" in 01:02 -> Submit -> Successful
 
 **Submission: 0.478** (threshold of 0.2)
+
+### [07-24_18-25-59] DeepLabV3, dropout
+
+First attempt, inspired by: https://github.com/smspillaz/seg-reg
+
+- 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
