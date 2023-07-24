@@ -6,8 +6,9 @@
 
 ## How-to execute notebooks in GCP
 
-```
-nohup jupyter nbconvert --to notebook --execute ~/identify-contrails/notebooks/identify-contrails.ipynb --output identify-contrails-executed.ipynb &
+``` bash
+# Execute in ~/kaggle/working
+nohup jupyter nbconvert --to notebook --execute ~/identify-contrails/notebooks/identify-contrails.ipynb --output ~/kaggle/working/identify-contrails-executed.ipynb &
 ```
 
 Reference: https://nbconvert.readthedocs.io/en/latest/usage.html#notebook-and-preprocessors
@@ -151,3 +152,9 @@ Features: TFRecords, history, auto-threshold.
 First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 - 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
+
+### [07-24_18-25-59] DeepLabV3, reference (no-dropout)
+
+Again DeepLabV3 for 10 epochs reference, checking reproducibility.
+
+WIP
