@@ -153,10 +153,11 @@ First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 - 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
 
-### [07-24_21-10-06] DeepLabV3, reference (no-dropout)
+### [xxx] DeepLabV3, reference (no-dropout)
 
 Again DeepLabV3 for 10 epochs reference, checking reproducibility.
 
-- 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765
+07-24_21-10-06: - 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765
+07-24_22-38-16: - 10 epochs - dice_coef: 0.4475 - val_dice_coef: 0.2468
 
-Much worse then v26.1, why?
+Diff is only learning rate scheduler, that does not seem to work properly, by-the-way.
