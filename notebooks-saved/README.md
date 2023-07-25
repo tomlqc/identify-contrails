@@ -13,7 +13,7 @@ nohup jupyter nbconvert --to notebook --execute ~/identify-contrails/notebooks/i
 
 Reference: https://nbconvert.readthedocs.io/en/latest/usage.html#notebook-and-preprocessors
 
-## How to get these notebook dumps
+## How to get notebook text dumps in Kaggle
 
 First in the browser:
 
@@ -157,7 +157,11 @@ First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 Again DeepLabV3 for 10 epochs reference, checking reproducibility.
 
-07-24_21-10-06: - 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765
-07-24_22-38-16: - 10 epochs - dice_coef: 0.4475 - val_dice_coef: 0.2468
+Runs
+- 07-24_21-10-06 - 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765 - lr: 0.010
+- 07-24_22-38-16 - 10 epochs - dice_coef: 0.4475 - val_dice_coef: 0.2468 - lr: 0.001 (default)
+- 07-25_00-58-50 -  9 epochs - dice_coef: 0.3833 - val_dice_coef: 0.2461 - lr: 0.002
+- 07-25_00-58-50 - **50 epochs** - dice_coef: 0.6156 - val_dice_coef: 0.2911 - lr: 0.002
 
-Diff is only learning rate scheduler, that does not seem to work properly, by-the-way.
+Conclusions
+- Diff is the learning rate. By-the-way the scheduler's decay_steps refer to the number of epochs.
