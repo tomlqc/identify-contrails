@@ -153,15 +153,24 @@ First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 - 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
 
-### [xxx] DeepLabV3, reference (no-dropout)
+### [xxx] DeepLabV3
 
-Again DeepLabV3 for 10 epochs reference, checking reproducibility.
+- DeepLabV3 for 10 epochs (again) as reference, checking reproducibility.
+- Benchmarks against it: learning rate, data augmentation, gradient accumulation, dropout
 
-Runs
+Results after **10 epochs**
 - 07-24_21-10-06 - 10 epochs - dice_coef: 0.3621 - val_dice_coef: 0.1765 - lr: 0.010
-- 07-24_22-38-16 - 10 epochs - dice_coef: 0.4475 - val_dice_coef: 0.2468 - lr: 0.001 (default)
+- 07-24_22-38-16 - 10 epochs - dice_coef: 0.4475 - val_dice_coef: 0.2468 - lr: 0.001 ~ **v29** (reference)
 - 07-25_00-58-50 -  9 epochs - dice_coef: 0.3833 - val_dice_coef: 0.2461 - lr: 0.002
+
+Long runs
 - 07-25_00-58-50 - **50 epochs** - dice_coef: 0.6156 - val_dice_coef: 0.2911 - lr: 0.002
+- 07-26_00-02-33 - **70 epochs** - dice_coef: 0.4726 - val_dice_coef: 0.3550 - lr: 0.002 exp
 
 Conclusions
-- Diff is the learning rate. By-the-way the scheduler's decay_steps refer to the number of epochs.
+- Default Adam's learning rate is 0.001
+- The scheduler's decay_steps refer to the number of epochs.
+- Run with data augmentation (07-26) attains train_dice of about 0.44 much later (in 40 epochs)
+  then w/o (v29) in (10 epochs),
+  but valid_dice is then much heigher: 0.3385 vs 0.2468. **Data augmentation works and improves !**
+
