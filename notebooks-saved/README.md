@@ -153,7 +153,7 @@ First attempt, inspired by: https://github.com/smspillaz/seg-reg
 
 - 10 epochs - dice_coef: 0.3526 - val_dice_coef: 0.2202
 
-### [xxx] DeepLabV3, reference (no-dropout)
+### [xxx] DeepLabV3-ResNet50, reference (no-dropout)
 
 Again DeepLabV3 for 10 epochs reference, checking reproducibility.
 
@@ -165,3 +165,24 @@ Runs
 
 Conclusions
 - Diff is the learning rate. By-the-way the scheduler's decay_steps refer to the number of epochs.
+
+### [xxx] DeepLabV3-P3DResNet
+
+DeepLabV3+ with P3DResNet backbone, type A blocks.
+
+- `/kaggle/temp/records-multi5-16-*` generated in 15 min on Kaggle
+- [v31] 10 ep, lr 0.001 (reference)
+- [v32] 20 ep, lr 0.002 **WIP**
+- [v33] 20 ep, 4 steps grad-acc **WIP**
+
+Runs
+- 07-28_19-34-15 - 10 epochs - dice_coef: 0.3357 - val_dice_coef: 0.1802 - lr: 0.001 [=v31]
+
+Conclusions
+- 600 ms per step i.e. ~10 min per epoch i.e. 10 epoch in ~2 h i.e. max 40 epochs
+- batch of 32 runs on Kaggle
+- still increasing dice after 10 epochs, val_dice up and down
+- **investigate learning rate and gradient accumulation**
+- **give dropout a try**
+- **continue iteration on reference**
+- **try P3D blocks B+C**
