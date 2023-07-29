@@ -182,7 +182,8 @@ Conclusions
 - 600 ms per step i.e. ~10 min per epoch i.e. 10 epoch in ~2 h i.e. max 40 epochs
 - batch of 32 runs on Kaggle
 - still increasing dice after 10 epochs, val_dice up and down
-- **investigate learning rate and gradient accumulation**
-- **give dropout a try**
-- **continue iteration on reference**
+- **lr 0.002** after 10 epochs achieves same train_dice but lower val_dice (0.15 vs 0.18)
+  but what happens after?
+- **grad-acc** does not seem to have so much benefit, not yet conclusive
+- **give dropout a try**: running again with and w/o over 20 epochs
 - **try P3D blocks B+C**
