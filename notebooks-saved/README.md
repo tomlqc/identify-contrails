@@ -161,8 +161,8 @@ DeepLabV3+ with P3DResNet backbone, type A blocks.
 
 - `/kaggle/temp/records-multi5-16-*` generated in 15 min on Kaggle
 - [v31] 10 ep, lr 0.001 (reference)
-- [v32] 20 ep, lr 0.002 **TO ANALYSE**
-- [v33] 20 ep, 4 steps grad-acc **TO ANALYSE**
+- [v32] 20 ep, lr 0.002
+- [v33] 20 ep, 4 steps grad-acc
 
 Runs
 - **07-28_19-34-15** - 10 epochs - dice_coef: 0.3357 - val_dice_coef: 0.1802 - lr: 0.001-exp (reference) [=v31]
@@ -186,6 +186,5 @@ Conclusions
 - **reference** (lr=0.001-cst, no-grad-acc) achieves best train_dice and valid_dice after 20 epochs
 
 Next
-- **give dropout a try**: running again with and w/o over 20 epochs
 - **run DeepLavV3/ResNet50 with dropout** to evaluate dropout
 - **try P3D blocks B+C**
