@@ -151,6 +151,7 @@ Runs
 - 07-25_00-58-50 -  9 epochs - dice_coef: 0.3833 - val_dice_coef: 0.2461 - lr: 0.002
 - 07-25_00-58-50 - 40 epochs - dice_coef: 0.5844 - val_dice_coef: 0.3522 - """
 - 07-25_00-58-50 - **50 epochs** - dice_coef: **0.6156** - val_dice_coef: 0.2911 - """
+- 07-30_10-32-45 - ... - dropout
 
 Conclusions
 - Diff is the learning rate. By-the-way the scheduler's decay_steps refer to the number of epochs.
@@ -166,15 +167,17 @@ DeepLabV3+ with P3DResNet backbone, type A blocks.
 
 Runs
 - **07-28_19-34-15** - 10 epochs - dice_coef: 0.3357 - val_dice_coef: 0.1802 - lr: 0.001-exp (reference) [=v31]
-- **xx-xx_xx-xx-xx** - 10 epochs - dice_coef: 0.3330 - val_dice_coef: 0.1476 - lr: 0.002-exp [v32]
-- xx-xx_xx-xx-xx - 20 epochs - dice_coef: 0.4027 - val_dice_coef: 0.2277
-- **xx-xx_xx-xx-xx** - 10 epochs - dice_coef: 0.2299 - val_dice_coef: 0.1154 - grad-acc [v33]
-- xx-xx_xx-xx-xx - 20 epochs - dice_coef: 0.3092 - val_dice_coef: 0.1838 - """
+- **07-28_21-26-12** - 10 epochs - dice_coef: 0.3330 - val_dice_coef: 0.1476 - lr: 0.002-exp [v32] (kaggle)
+- 07-28_21-26-12 - 20 epochs - dice_coef: 0.4027 - val_dice_coef: 0.2277
+- **07-28_21-28-24** - 10 epochs - dice_coef: 0.2299 - val_dice_coef: 0.1154 - grad-acc [v33] (kaggle)
+- 07-28_21-28-24 - 20 epochs - dice_coef: 0.3092 - val_dice_coef: 0.1838 - """
 - **07-28_22-38-12** - 10 epochs - dice_coef: 0.2069 - val_dice_coef: 0.1138 - lr: 0.002-exp + grad-acc [=v32+v33]
 - 07-28_22-38-12 - **40 epochs** - dice_coef: 0.3570 - val_dice_coef: 0.2252 - """ 
 - **07-29_16-03-20** - 10 epochs - dice_coef: 0.3312 - val_dice_coef: 0.1665 - lr: 0.001-cst (**reference**)
 - 07-29_16-03-20 - **20 epochs** - dice_coef: 0.3974 - val_dice_coef: 0.2932 - """
-- WIP dropout
+- **07-29_21-28-43** - 10 epochs - dice_coef: 0.3250 - val_dice_coef: 0.1385 - dropout
+- 07-29_21-28-43 - 20 epochs - dice_coef: 0.3854 - val_dice_coef: 0.2615 - """
+- 07-29_21-28-43 - **40 epochs** - dice_coef: 0.4478 - val_dice_coef: 0.2877 - """
 
 Conclusions
 - 600 ms per step i.e. ~10 min per epoch i.e. 10 epoch in ~2 h i.e. max 40 epochs
@@ -182,7 +185,8 @@ Conclusions
 - still increasing dice after 10 epochs, val_dice up and down
 - **lr 0.002** after 10 epochs achieves same train_dice but lower val_dice (0.15 vs 0.18)
   this remains the same for 20 epochs
-- **grad-acc** has not much benefit
+- **grad-acc** has no benefit
+- **dropout** has no 
 - **reference** (lr=0.001-cst, no-grad-acc) achieves best train_dice and valid_dice after 20 epochs
 
 Next
