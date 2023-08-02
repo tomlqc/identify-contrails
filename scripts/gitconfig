@@ -1,0 +1,8 @@
+[alias]
+	co = checkout
+	fa = fetch --all
+	log1 = log --oneline --decorate --graph
+	log2 = log --pretty=format:\"%h - %ar : %s [%ae]\" --graph
+[user]
+	email = thomas.g@gmx.net
+	name = Thomas G.
