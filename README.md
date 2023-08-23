@@ -11,20 +11,31 @@ It was my first Kaggle competition and it was also an opportunity to explore Goo
 
 ## Submission notebook
 
-The notebook that I have continuously worked on is
+The notebook that I have worked for the competition is
 
 [notebooks/identify-contrails.ipynb](notebooks/identify-contrails.ipynb)
 
-It includes:
+Past the deadline I have continued with 
 
-- A data pipeline based on TFRecords, as the Keras dataset was not efficient enough for properly feeding the GPU,
-  including a multiprocessing parallelized generation of TFRecords
-- Data augmentation
+[notebooks/identify-contrails-multi-gpu.ipynb](notebooks/identify-contrails-multi-gpu.ipynb)
+
+**Features**
+
+- A data pipeline based on **TFRecordDataset**,
+  since the Keras dataset was not efficient enough for properly feeding the GPU:
+  includes a **multiprocessing parallelized generation** of TFRecords
+- Data augmentation:
+  **custom multi-frame image augmentation for segmentation** to apply the same random transform
+  to all time frames and the segmentation mask,
+  since the keras.layers preprocessing layers do not support this feature
 - Models:
-  - Pseudo-3D ResNet (P3DResNet) implementation inspired by Keras' ResNet50
-  - U-Net with self-made encoder, ResNet50 or P3DResNet
-  - DeepLabV3+ with ResNet50 or P3DResNet
+  - **Pseudo-3D ResNet (P3DResNet)** implementation inspired by Keras' ResNet50
+  - **U-Net** with self-made encoder, ResNet50 or P3DResNet
+  - **DeepLabV3+** with ResNet50 or P3DResNet
 - Gradient accumulation (the implementation did not show any benefit)
+- **Mixed-precision** GPU training: results in 2x speed up
+- **Multi-GPU** support (added in late submission): results in 2x speed up on 2x T4,
+  see the `<STRATEGY>` tag in the code comments
 
 ## History
 
@@ -46,6 +57,20 @@ I struggled with slow iterations of my U-Net (not yet explained) and
 with the data augmentation that did not provide a better generalization as expected.
 The latter is probably due to the misalignment of the masks with the images,
 as mentioned in this [discussion](https://www.kaggle.com/competitions/google-research-identify-contrails-reduce-global-warming/discussion/430479#2382723).
+
+## GPU tuning
+
+**Benchmark**
+
+On a small subset of the data.
+
+| configuration | epoch 1 | epoch 2 |
+| --- | --- | --- |
+| single GPU, tf dataset | 73s | 38s (100%) |
+| multi GPU, tf dataset | 74s | 20s (60%) |
+| multi GPU, distributed dataset | 76s | 21s |
+| single GPU, tf dataset + mixed precision | 63s | 15s (100%) |
+| multi GPU, tf dataset + mixed precision | 82s | 9s (60%) |
 
 ## Next
 
