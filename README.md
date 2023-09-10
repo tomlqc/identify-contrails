@@ -4,8 +4,8 @@ My contribution to the 2023 Kaggle competition:
 
 https://www.kaggle.com/competitions/google-research-identify-contrails-reduce-global-warming
 
-I did not get a significant rank (see [statistics](notebooks/Kaggle-competition-statistics.ipynb)),
-but my original goal was to learn some advanced TensorFlow and to get some practice.
+My goal was to learn some advanced TensorFlow and to get some practice
+(see also [statistics](notebooks/Kaggle-competition-statistics.ipynb)).
 
 It was my first Kaggle competition and it was also an opportunity to explore Google Cloud's Vertex AI.
 
